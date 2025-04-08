@@ -9,5 +9,6 @@ router.get('/', isAdmin,eventController.getEvents);
 router.get('/:id', isAdmin,eventController.getEventById);
 router.put('/:id', isAdmin,eventController.updateEvent);
 router.delete('/:id', isAdmin,eventController.deleteEvent);
+router.get('/getEventDetail/:id', isAdmin,eventController.getEventDetail);
 
 module.exports = router;

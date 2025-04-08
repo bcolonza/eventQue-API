@@ -11,5 +11,6 @@ router.get('/:id', isAdmin,sevakController.getSevakById);
 router.put('/:id', isAdmin,sevakController.updateSevak);
 router.delete('/:id', isAdmin,sevakController.deleteSevak);
 router.post('/uploadCSV', isAdmin,upload.single('csvfile'),sevakController.uploadCSV);
+router.post('/markAttendance', isAdmin,sevakController.markAttendance);
 
 module.exports = router;

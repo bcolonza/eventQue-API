@@ -37,3 +37,39 @@ exports.login = async (req, res) => {
         res.status(500).json({ status: false, message: 'Server error', error });
     }
 };
+
+exports.updatePassword = async (req, res) => {
+    try {
+      const { userId, oldPassword, newPassword } = req.body;
+  
+      if (!userId || !oldPassword || !newPassword) {
+        return res.status(400).json({
+          status: false,
+          message: 'userId, oldPassword, and newPassword are required',
+        });
+      }
+  
+      const user = await User.findOne({ userId });
+  
+      if (!user) {
+        return res.status(404).json({ status: false, message: 'User not found' });
+      }
+  
+      const isMatch = await user.comparePassword(oldPassword);
+  
+      if (!isMatch) {
+        return res.status(401).json({ status: false, message: 'Old password is incorrect' });
+      }
+  
+      user.password = newPassword; // bcrypt will hash it via pre-save hook
+      await user.save();
+  
+      return res.status(200).json({ status: true, message: 'Password updated successfully' });
+  
+    } catch (error) {
+      console.error('Password update error:', error);
+      return res.status(500).json({ status: false, message: 'Server error', error: error.message });
+    }
+  };
+  
+  

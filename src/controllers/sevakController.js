@@ -1,4 +1,5 @@
 const Sevak = require("../models/Sevak");
+const SevakAttendance = require("../models/SevakAttendance");
 const Department = require("../models/Department");
 const fs = require("fs");
 const csv = require("csv-parser");
@@ -21,12 +22,10 @@ exports.createSevak = async (req, res) => {
       isDeleted: false,
     });
     if (existingSevak) {
-      return res
-        .status(400)
-        .json({
-          status: false,
-          message: "Sevak with this Username already exists",
-        });
+      return res.status(400).json({
+        status: false,
+        message: "Sevak with this Username already exists",
+      });
     }
 
     // Validate department IDs
@@ -44,13 +43,11 @@ exports.createSevak = async (req, res) => {
     });
     const savedSevak = await newSevak.save();
 
-    res
-      .status(201)
-      .json({
-        status: true,
-        message: "Sevak Created Successfully",
-        sevak: savedSevak,
-      });
+    res.status(201).json({
+      status: true,
+      message: "Sevak Created Successfully",
+      sevak: savedSevak,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
   }
@@ -128,13 +125,11 @@ exports.updateSevak = async (req, res) => {
         .json({ status: false, message: "Sevak not found" });
     }
 
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Sevak Updated Successfully",
-        sevak: updatedSevak,
-      });
+    res.status(200).json({
+      status: true,
+      message: "Sevak Updated Successfully",
+      sevak: updatedSevak,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
   }
@@ -157,15 +152,65 @@ exports.deleteSevak = async (req, res) => {
         .json({ status: false, message: "Sevak not found" });
     }
 
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Sevak Deleted Successfully",
-        sevak: deletedSevak,
-      });
+    res.status(200).json({
+      status: true,
+      message: "Sevak Deleted Successfully",
+      sevak: deletedSevak,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
+  }
+};
+
+exports.markAttendance = async (req, res) => {
+  try {
+    const { eventId, sevakId, status } = req.body;
+
+    if (!eventId || !sevakId) {
+      return res
+        .status(400)
+        .json({ status: false, message: "Missing eventId or sevakId" });
+    }
+    const now = new Date();
+    // const currentDate = now.toISOString().split('T')[0];
+    const currentTime = now.toTimeString().split(" ")[0]; // "HH:MM:SS" format
+
+    if (status === true) {
+      // Check if attendance already exists
+      const existing = await SevakAttendance.exists({ eventId, sevakId });
+
+      if (existing) {
+        return res.status(200).json({
+          status: false,
+          message: "Attendance already marked",
+        });
+      }
+
+      const attendance = await SevakAttendance.create({
+        eventId,
+        sevakId,
+        presentTime: currentTime,
+      });
+
+      return res.status(200).json({
+        status: true,
+        message: "Attendance marked successfully",
+        data: attendance,
+      });
+    } else {
+      // status is false — remove attendance
+      const deleted = await SevakAttendance.findOneAndDelete({
+        eventId,
+        sevakId,
+      });
+
+      return res.status(200).json({
+        status: true,
+        message: deleted ? "Attendance removed": "No attendance found to remove"});
+    }
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: false, error: "Could not mark attendance" });
   }
 };
 

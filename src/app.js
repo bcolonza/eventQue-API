@@ -1,6 +1,8 @@
 const express = require('express');
 const dotenv = require('dotenv');
 const connectDB = require('./config/db');
+const cors = require('cors');
+
 const authRoutes = require('./routes/authRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const departmentRoutes = require('./routes/departmentRoutes');
@@ -10,8 +12,14 @@ dotenv.config();
 connectDB();
 
 const app = express();
+app.use(cors());
+// app.use(cors({
+    //   origin: 'http://your-frontend-domain.com',
+    //   methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    //   credentials: true
+    // }));
+    
 app.use(express.json());
-
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/department', departmentRoutes);
