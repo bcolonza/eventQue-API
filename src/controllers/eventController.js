@@ -1,8 +1,9 @@
 const Event = require("../models/Event");
 const Sevak = require("../models/Sevak");
-const moment = require("moment-timezone");
+const { convertTo24HourFormat,convertTo12HourFormat } = require("../utils/dateFormet.js");
 
 // Create Event
+
 exports.createEvent = async (req, res) => {
   try {
     const { parentEvent, title, eventType, date, startTime, endTime } =
@@ -16,7 +17,7 @@ exports.createEvent = async (req, res) => {
     if (existingEvent) {
       return res
         .status(400)
-        .json({ status: false, message: "Event already exists" });
+        .json({ status: false, message: "Event already exists", data: null });
     }
     // createdBy
     const newEvent = await Event.create({
@@ -28,12 +29,22 @@ exports.createEvent = async (req, res) => {
       endTime,
       createdBy: req.user._id,
     });
-    res.status(201).json({
+    res.status(200).json({
       status: true,
       message: "Event Added Successfully",
-      newEvent: newEvent,
+      data: newEvent,
     });
   } catch (error) {
+    // Handle Mongoose validation errors
+if (error.name === 'ValidationError') {
+  const errors = Object.values(error.errors).map(err => err.message);
+
+  return res.status(400).json({
+    status: false,
+    message: "Validation Error",
+    errors, 
+  });
+}
     res.status(500).json({ status: false, message: "Server Error", error });
   }
 };
@@ -41,23 +52,23 @@ exports.createEvent = async (req, res) => {
 // Get Events with Filters
 exports.getEvents = async (req, res) => {
   try {
-    const { filter, search } = req.query; // filter: 'past', 'upcoming', 'ongoing'
+    const { filterEventType, search } = req.query; 
 
-    const now = new Date();
-    const currentDate = now.toISOString().split("T")[0];
-
-    console.log("currentDate", currentDate);
-
-    // filter
     let query = { isDeleted: false };
 
-    if (filter === "past") {
-      query = { ...query, date: { $lt: currentDate } }; // Events before today
-    } else if (filter === "upcoming") {
-      query = { date: { $gt: currentDate } }; // Events after today
-    } else if (filter === "ongoing") {
-      query = { date: currentDate }; // Events happening today
-    }
+    //date filter
+    // const now = new Date();
+    // const currentDate = now.toISOString().split("T")[0];
+
+    // filter
+
+    // if (filter === "Completed") {
+    //   query = { ...query, date: { $lt: currentDate } }; // Events before today
+    // } else if (filter === "Upcoming") {
+    //   query = { date: { $gt: currentDate } }; // Events after today
+    // } else if (filter === "Ongoing") {
+    //   query = { date: currentDate }; // Events happening today
+    // }
 
     // search
     if (search) {
@@ -67,12 +78,31 @@ exports.getEvents = async (req, res) => {
         $or: [{ title: { $regex: searchRegex } }],
       };
     }
-    const events = await Event.find(query).sort({ createdAt: -1 });
-    // .populate('parentEvent');
+
+    if (filterEventType) {
+      query = {
+        ...query,
+        eventType: filterEventType ,
+      };
+    }
+    const events = await Event.find(query).sort({ date: -1 }).select({__v:0,createdAt:0,updatedAt:0});
+
+     // Add status to each event
+    //  const enrichedEvents = events.map(event => {
+    //   let status = "Upcoming";
+    //   if (event.date < currentDate) status = "Completed";
+    //   else if (event.date === currentDate) status = "Ongoing";
+    
+    //   return {
+    //     ...event._doc, // Spread original event
+    //     status,
+    //   };
+    // });
+    
     res.status(200).json({
       status: true,
       message: "Event List Get Successfully",
-      events: events,
+      data: events,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
@@ -96,7 +126,7 @@ exports.getEventById = async (req, res) => {
     if (!event)
       return res
         .status(404)
-        .json({ status: false, message: "Event not found" });
+        .json({ status: false, message: "Event not found", data: null });
 
     // Determine event status
     let eventStatus = "";
@@ -105,14 +135,16 @@ exports.getEventById = async (req, res) => {
     } else if (event.date > currentDate) {
       eventStatus = "Upcoming";
     } else {
-      eventStatus = "Past";
+      eventStatus = "Completed";
     }
 
     res.status(200).json({
       status: true,
       message: "Get Event Data",
-      event: event,
-      eventStatus:eventStatus
+      data: {
+        event: event,
+        eventStatus: eventStatus,
+      },
     });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
@@ -128,11 +160,11 @@ exports.updateEvent = async (req, res) => {
     if (!event)
       return res
         .status(404)
-        .json({ status: false, message: "Event not found" });
+        .json({ status: false, message: "Event not found", data: null });
     res.status(200).json({
       status: true,
       message: "Event Updated Successfully",
-      event: event,
+      data: event,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
@@ -148,10 +180,14 @@ exports.deleteEvent = async (req, res) => {
     if (!event)
       return res
         .status(404)
-        .json({ status: false, message: "Event not found" });
+        .json({ status: false, message: "Event not found", data: null });
     res
       .status(200)
-      .json({ status: true, message: "Event deleted successfully" });
+      .json({
+        status: true,
+        message: "Event deleted successfully",
+        data: null,
+      });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
   }
@@ -160,6 +196,10 @@ exports.deleteEvent = async (req, res) => {
 //event detail with sevak list
 exports.getEventDetail = async (req, res) => {
   try {
+    const now = new Date();
+    const currentDate = now.toISOString().split("T")[0];
+    const currentTime = now.toTimeString().split(" ")[0]; // "HH:MM:SS" format
+
     const event = await Event.findById(req.params.id).select({
       title: 1,
       eventType: 1,
@@ -168,12 +208,25 @@ exports.getEventDetail = async (req, res) => {
       endTime: 1,
     });
 
+    console.log("event.date",event.date)
+    console.log("currentDate",currentDate)
+    // Determine event status
+    let eventStatus = "";
+    if (event.date == currentDate) {
+      eventStatus = "Ongoing";
+    } else if (event.date > currentDate) {
+      eventStatus = "Upcoming";
+    } else {
+      eventStatus = "Completed";
+    }
+
     if (!event) {
       return res
         .status(404)
-        .json({ status: false, message: "Event not found" });
+        .json({ status: false, message: "Event not found", data: null });
     }
 
+    const eventStartTime = convertTo24HourFormat(event.startTime)
     const sevak = await Sevak.aggregate([
       {
         $match: { isDeleted: false },
@@ -199,7 +252,38 @@ exports.getEventDetail = async (req, res) => {
           _id: 1,
           fullName: 1,
           userName: 1,
-          presentTime: { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
+          profilePic:"https://images.pexels.com/photos/736230/pexels-photo-736230.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
+          presentTime: {
+            $ifNull: [
+              { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
+              "00:00",
+            ],
+          },
+          color: {
+            $cond: {
+              if: { $gt: [{ $size: "$sevakAttendances" }, 0] },
+              then: {
+                $cond: {
+                  if: {
+                    $gt: [
+                      { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
+                      eventStartTime,
+                    ],
+                  },
+                  then: "CFA01F",
+                  else: "008000",
+                },
+              },
+              else: "D61818",
+            },
+          },
+          presentStatus: {
+            $cond: {
+              if: { $gt: [{ $size: "$sevakAttendances" }, 0] },
+              then: true,
+              else: false,
+            },
+          },
           attendance: {
             $cond: {
               if: { $gt: [{ $size: "$sevakAttendances" }, 0] },
@@ -208,7 +292,7 @@ exports.getEventDetail = async (req, res) => {
                   if: {
                     $gt: [
                       { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
-                      event.startTime,
+                      eventStartTime,
                     ],
                   },
                   then: "Late",
@@ -244,13 +328,21 @@ exports.getEventDetail = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Get Event Data",
-      event: event,
-      sevak: sevak,
-      summary: {
-        totalSevaks,
-        percentageOnTime: percentage(totalOnTime),
-        percentageLate: percentage(totalLate),
-        percentageAbsent: percentage(totalAbsent),
+      data: {
+        eventStatus:eventStatus,
+        event: event,
+        sevak: sevak,
+        graphData: [
+          { label: "On Time", total: totalOnTime, backgroundColor: "008000" },
+          { label: "Late", total: totalLate, backgroundColor: "CFA01F" },
+          { label: "Absent", total: totalAbsent, backgroundColor: "D61818" },
+        ],
+        summary: {
+          totalSevaks,
+          percentageOnTime: percentage(totalOnTime),
+          percentageLate: percentage(totalLate),
+          percentageAbsent: percentage(totalAbsent),
+        },
       },
     });
   } catch (error) {

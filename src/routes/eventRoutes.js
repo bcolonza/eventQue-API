@@ -1,14 +1,14 @@
 const express = require('express');
 const  eventController = require('../controllers/eventController');
-const { isAdmin } = require('../middlewares/authMiddleware')
+const authorizeRoles = require('../middlewares/authMiddleware')
 
 const router = express.Router();
 
-router.post('/', isAdmin,eventController.createEvent);
-router.get('/', isAdmin,eventController.getEvents);
-router.get('/:id', isAdmin,eventController.getEventById);
-router.put('/:id', isAdmin,eventController.updateEvent);
-router.delete('/:id', isAdmin,eventController.deleteEvent);
-router.get('/getEventDetail/:id', isAdmin,eventController.getEventDetail);
+router.post('/', authorizeRoles("superAdmin"),eventController.createEvent);
+router.get('/', authorizeRoles("superAdmin"),eventController.getEvents);
+router.get('/:id', authorizeRoles("superAdmin"),eventController.getEventById);//need to remove 
+router.put('/:id', authorizeRoles("superAdmin"),eventController.updateEvent);
+router.delete('/:id', authorizeRoles("superAdmin"),eventController.deleteEvent);
+router.get('/getEventDetail/:id', authorizeRoles("superAdmin"),eventController.getEventDetail);
 
 module.exports = router;

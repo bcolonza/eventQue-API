@@ -3,10 +3,10 @@ const dotenv = require('dotenv');
 const connectDB = require('./config/db');
 const cors = require('cors');
 
-const authRoutes = require('./routes/authRoutes');
+const sevakRoutes = require('./routes/sevakRoutes');
 const eventRoutes = require('./routes/eventRoutes');
 const departmentRoutes = require('./routes/departmentRoutes');
-const sevakRoutes = require('./routes/sevakRoutes');
+const mandalRoute = require('./routes/mandalRoute');
 
 dotenv.config();
 connectDB();
@@ -20,10 +20,10 @@ app.use(cors());
     // }));
     
 app.use(express.json());
-app.use('/api/auth', authRoutes);
+app.use('/api', sevakRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/department', departmentRoutes);
-app.use('/api/sevak', sevakRoutes);
+app.use('/api/mandal', mandalRoute);
 
 app.use((req, res) => {
     res.status(404).json({ message: 'API endpoint not found' });

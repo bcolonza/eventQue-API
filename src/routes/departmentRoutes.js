@@ -1,13 +1,13 @@
 const express = require('express');
 const router = express.Router();
 const departmentController = require('../controllers/departmentController');
-const { isAdmin } = require('../middlewares/authMiddleware')
+const authorizeRoles = require('../middlewares/authMiddleware')
 
 // CRUD Routes
-router.post('/', isAdmin,departmentController.createDepartment);
-router.get('/', isAdmin,departmentController.getDepartments);
-router.get('/:id', isAdmin,departmentController.getDepartmentById);
-router.put('/:id', isAdmin,departmentController.updateDepartment);
-router.delete('/:id', isAdmin,departmentController.deleteDepartment);
+router.post('/', authorizeRoles("superAdmin"),departmentController.createDepartment);//need to remove
+router.get('/', authorizeRoles("superAdmin"),departmentController.getDepartments);
+router.get('/:id', authorizeRoles("superAdmin"),departmentController.getDepartmentById);//need to remove
+router.put('/:id', authorizeRoles("superAdmin"),departmentController.updateDepartment);//need to remove
+router.delete('/:id', authorizeRoles("superAdmin"),departmentController.deleteDepartment);//need to remove
 
 module.exports = router;
