@@ -1,12 +1,15 @@
 const Sevak = require("../models/Sevak");
 const Event = require("../models/Event");
 const SevakAttendance = require("../models/SevakAttendance");
+const MasterEvent = require('../models/masterEvent');
+const Mandal = require('../models/Mandal.js');
 const Department = require("../models/Department");
 const fs = require("fs");
 const csv = require("csv-parser");
 const generateToken = require('../utils/generateToken');
 const { totalmem } = require("os");
 const { convertTo24HourFormat,convertTo12HourFormat } = require("../utils/dateFormet.js");
+const bcrypt = require('bcryptjs');
 
 const validateDepartments = async (departmentIds) => {
   const count = await Department.countDocuments({
@@ -20,8 +23,9 @@ exports.createSevak = async (req, res) => {
   try {
     const {
       fullName,
-      userName,
       mobile,
+      whatsappNumber,
+      email,
       departments,
       mandal,
       kshetra,
@@ -31,13 +35,13 @@ exports.createSevak = async (req, res) => {
     } = req.body;
 
     const existingSevak = await Sevak.findOne({
-      userName: { $regex: `^${userName}$`, $options: "i" },
+      mobile: mobile,
       isDeleted: false,
     });
     if (existingSevak) {
       return res.status(400).json({
         status: false,
-        message: "Sevak with this Username already exists",
+        message: "Sevak with this Mobile already exists",
         data: null,
       });
     }
@@ -51,12 +55,21 @@ exports.createSevak = async (req, res) => {
       }
     }
 
+    const existMandal = await Mandal.findOne({name:mandal, isDeleted: false});
+
+    if(!existMandal){
+      return res
+      .status(400)
+      .json({ status: false, message: "Invalid mandal.", data: null });
+    }
+   
     const newSevak = new Sevak({
       fullName,
-      userName,
       mobile,
+      whatsappNumber,
+      email,
       departments,
-      mandal,
+      mandal:existMandal._id,
       kshetra,
       role,
       password,
@@ -96,11 +109,11 @@ if (error.name === 'ValidationError') {
 };
 
 exports.login = async (req, res) => {
-  const { userName, password } = req.body;
+  const { mobile, password } = req.body;
   try {
-      const user = await Sevak.findOne({ userName });
+      const user = await Sevak.findOne({ mobile,isDeleted:false });
       if (!user) {
-          return res.status(404).json({ status: false, message: 'User not found',data:null });
+          return res.status(404).json({ status: false, message: 'User not found using this mobile number',data:null });
       }
       const isMatch = await user.comparePassword(password);
       if (isMatch) {
@@ -119,13 +132,14 @@ exports.login = async (req, res) => {
 // admin dashboard
 exports.dashboard = async (req, res) => {
   try {
-    totalSevaks = await Sevak.countDocuments({ isDeleted: false });
-    totalGuest = 0
-    totalMasterEvent = 0
+    totalSevaks = await Sevak.countDocuments({ gender:"male",isDeleted: false });
+    totalSevika = await Sevak.countDocuments({ gender:"female",isDeleted: false });
+    totalGuest = 0;
+    totalMasterEvent = await MasterEvent.countDocuments({ isDeleted: false });
     totalMsg = 0
     totalEvents = await Event.countDocuments({ isDeleted: false });
     totalDepartments = await Department.countDocuments();
-    res.status(200).json({status:true, message: 'Login Successful', data:{totalSevaks:totalSevaks,totalGuest:totalGuest,totalEvents:totalEvents,totalMasterEvent:totalMasterEvent,totalDepartments:totalDepartments,totalMsg:totalMsg} });
+    res.status(200).json({status:true, message: 'Login Successful', data:{totalSevaks:totalSevaks,totalSevika:totalSevika,totalGuest:totalGuest,totalEvents:totalEvents,totalMasterEvent:totalMasterEvent,totalDepartments:totalDepartments,totalMsg:totalMsg} });
   } catch (error) {
       res.status(500).json({ status: false, message: 'Server error', error });
   }
@@ -166,6 +180,23 @@ exports.updatePassword = async (req, res) => {
   }
 };
 
+exports.profile = async (req, res) => {
+  try {
+    const userId = req.user._id
+    const user = await Sevak.findOne({ _id:userId,isDeleted:false }).populate("departments", { name: 1 });
+
+    if (!user) {
+      return res.status(404).json({ status: false, message: 'User not found',data:null });
+    }
+
+    const userObj = user.toObject();
+    delete userObj.password;
+    res.status(200).json({ status: true, message: "Get Sevak Detail", data: userObj });
+  } catch (error) {
+    res.status(500).json({ status: false, message: "Server Error", error });
+  }
+};
+
 // Get All Sevaks 
 exports.getSevaks = async (req, res) => {
   try {
@@ -195,7 +226,8 @@ exports.getSevaks = async (req, res) => {
       query.mandal = mandal;
     }
     const sevaks = await Sevak.find(query)
-      .sort({ userName: 1 }).select({__v:0,createdAt:0, updatedAt:0,isAdmin:0})
+      .sort({ fullName: 1 }).select({__v:0,createdAt:0, updatedAt:0,isAdmin:0})
+      // .populate("mandal", { name: 1 })
       .populate("departments", { name: 1 });
     res
       .status(200)
@@ -209,25 +241,6 @@ exports.getSevaks = async (req, res) => {
   }
 };
 
-// Get Sevak by ID
-exports.getSevakById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const sevak = await Sevak.findById(id).populate("departments", { name: 1 });
-
-    if (!sevak || sevak.isDeleted) {
-      return res
-        .status(404)
-        .json({ status: true, message: "Sevak not found", data: null });
-    }
-
-    res
-      .status(200)
-      .json({ status: true, message: "Get Sevak Detail", data: sevak });
-  } catch (error) {
-    res.status(500).json({ status: false, message: "Server Error", error });
-  }
-};
 
 // Update Sevak
 exports.updateSevak = async (req, res) => {
@@ -297,7 +310,7 @@ exports.deleteSevak = async (req, res) => {
 
 exports.markAttendance = async (req, res) => {
   try {
-    const { eventId, sevakId, status } = req.body;
+    const { eventId, sevakId, status,isEdit,time } = req.body;
 
     if (!eventId || !sevakId) {
       return res
@@ -309,15 +322,25 @@ exports.markAttendance = async (req, res) => {
         });
     }
     const now = new Date();
-    // const currentDate = now.toISOString().split('T')[0];
-    const currentTime = now.toTimeString().split(" ")[0].slice(0, 5);  // "HH:MM:SS" format
-    const convertCurrentTime = convertTo12HourFormat(currentTime)
+    const currentTime = now.toTimeString().split(" ")[0].slice(0, 5);  // 24h format
+    const convertCurrentTime = convertTo12HourFormat(currentTime) // 12h format
 
+    if(isEdit && time){
+      const convertUpdate12hTime = convertTo12HourFormat(time)
+      const convertUpdate24Time = convertTo24HourFormat(time)
 
-
-
-
-    
+      // Update attendance
+      const updated = await SevakAttendance.findOneAndUpdate(
+        { eventId, sevakId },
+        { presentTime: convertUpdate12hTime, convertedPresentTime: convertUpdate24Time },
+        { new: true }
+      );
+      return res.status(200).json({
+        status: true,
+        message: "Attendance updated successfully",
+        data: updated,
+      });
+    }
     if (status === true) {
       // Check if attendance already exists
       const existing = await SevakAttendance.exists({ eventId, sevakId });
@@ -333,7 +356,8 @@ exports.markAttendance = async (req, res) => {
       const attendance = await SevakAttendance.create({
         eventId,
         sevakId,
-        presentTime: convertCurrentTime,
+        presentTime: convertCurrentTime,//12h format
+        convertedPresentTime:currentTime//24h format
       });
 
       return res.status(200).json({
@@ -366,34 +390,51 @@ exports.markAttendance = async (req, res) => {
 exports.uploadCSV = async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  const results = [];
+  const rawRows = [];
 
+  // Step 1: Read all CSV rows first
   fs.createReadStream(req.file.path)
     .pipe(csv())
     .on("data", (data) => {
-      const { Name, Mobile, Mandal, Kshetra, "Full Name": FullName } = data;
-
-      // Only push required fields
-      results.push({
-        fullName: FullName,
-        userName: Name,
-        mobile: Mobile,
-        mandal: Mandal,
-        kshetra: Kshetra,
-      });
+      rawRows.push(data);
     })
     .on("end", async () => {
       try {
-        const result = await Sevak.insertMany(results);
-        fs.unlinkSync(req.file.path); // Clean up file
-        res
-          .status(200)
-          .json({ message: "CSV uploaded and data stored successfully." });
+        const results = [];
+
+        for (const row of rawRows) {
+          const { Name, Mobile, Mandal, Kshetra, gender, role, password } = row;
+
+          // const existMandal = await Mandal.findOne({ name: Mandal, isDeleted: false });
+          // if (!existMandal) continue; // Skip if mandal doesn't exist
+
+          const hashedPassword = await bcrypt.hash(password || "default@123", 10);
+
+          results.push({
+            fullName: Name,
+            mobile: Mobile,
+            whatsappNumber: Mobile,
+            email: "",
+            mandal: Mandal,
+            kshetra: Kshetra,
+            gender: gender,
+            role: role,
+            password: hashedPassword,
+          });
+        }
+
+        await Sevak.insertMany(results);
+        fs.unlinkSync(req.file.path); // Clean up uploaded file
+
+        res.status(200).json({ message: "CSV uploaded and data stored successfully." });
       } catch (error) {
+        console.error("Upload Error:", error);
         res.status(500).json({ error: "Failed to insert data into MongoDB" });
       }
     });
 };
+
+
 
 
   

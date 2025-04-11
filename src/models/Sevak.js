@@ -2,12 +2,13 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const sevakSchema = new mongoose.Schema({
-    fullName: { type: String, },
-    userName: { type: String, required: [true,"username is required"] },
-    mobile: { type: String },
+    fullName: { type: String, required: [true,"fullName is required"]},
+    mobile: { type: String,required: [true,"mobile number is required"] },
+    whatsappNumber: { type: String,default:null },
+    email: { type: String },
     departments: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Department' }],
-    mandal: { type: String },
-    kshetra: { type: Number },
+    mandal: { type: mongoose.Schema.Types.ObjectId, ref: 'Mandal',default: null },
+    kshetra: { type: String,default: null },
     isDeleted: { type: Boolean, default: false },
     role: { type: String,enum:["superAdmin","admin","sevak","leader"], required: [true,"select role from sevak or leader "] },
     profilePic: { type: String, default: null },

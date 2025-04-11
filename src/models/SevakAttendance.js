@@ -12,7 +12,9 @@ const SevakAttendanceSchema = new mongoose.Schema(
       ref: "Sevak",
       required: true,
     },
-    presentTime: { type: String, required: [true, "present time is required"] },
+    presentTime: { type: String, required: [true, "present time is required"] }, //12h format
+    convertedPresentTime: { type: String }, //24h format
+    isDeleted: { type: Boolean, default: false },
   },
   {
     timestamps: true,

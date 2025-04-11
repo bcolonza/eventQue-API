@@ -1,24 +1,26 @@
 const Event = require("../models/Event");
 const Sevak = require("../models/Sevak");
 const { convertTo24HourFormat,convertTo12HourFormat } = require("../utils/dateFormet.js");
+const mongoose = require('mongoose');
+const ObjectId = mongoose.Types.ObjectId;
 
 // Create Event
 
 exports.createEvent = async (req, res) => {
   try {
-    const { parentEvent, title, eventType, date, startTime, endTime } =
+    const { parentEvent, title, eventType, date, startTime, endTime,isAllowGuestAttendance } =
       req.body;
 
-    const existingEvent = await Event.findOne({
-      title: { $regex: `^${title}$`, $options: "i" },
-      isDeleted: false,
-    });
+    // const existingEvent = await Event.findOne({
+    //   title: { $regex: `^${title}$`, $options: "i" },
+    //   isDeleted: false,
+    // });
 
-    if (existingEvent) {
-      return res
-        .status(400)
-        .json({ status: false, message: "Event already exists", data: null });
-    }
+    // if (existingEvent) {
+    //   return res
+    //     .status(400)
+    //     .json({ status: false, message: "Event already exists", data: null });
+    // }
     // createdBy
     const newEvent = await Event.create({
       parentEvent,
@@ -28,6 +30,7 @@ exports.createEvent = async (req, res) => {
       startTime,
       endTime,
       createdBy: req.user._id,
+      isAllowGuestAttendance:isAllowGuestAttendance
     });
     res.status(200).json({
       status: true,
@@ -52,13 +55,13 @@ if (error.name === 'ValidationError') {
 // Get Events with Filters
 exports.getEvents = async (req, res) => {
   try {
-    const { filterEventType, search } = req.query; 
+    const { filterEventType, search,filterParentEvent } = req.query; 
 
     let query = { isDeleted: false };
 
     //date filter
-    // const now = new Date();
-    // const currentDate = now.toISOString().split("T")[0];
+    const now = new Date();
+    const currentDate = now.toISOString().split("T")[0];
 
     // filter
 
@@ -85,24 +88,32 @@ exports.getEvents = async (req, res) => {
         eventType: filterEventType ,
       };
     }
-    const events = await Event.find(query).sort({ date: -1 }).select({__v:0,createdAt:0,updatedAt:0});
+
+    if (filterParentEvent) {
+      query = {
+        ...query,
+        parentEvent:new ObjectId(filterParentEvent) ,
+      };
+    }
+    console.log(query);
+    const events = await Event.find(query).populate("parentEvent", { masterEventName: 1 }).sort({ date: -1 }).select({__v:0,createdAt:0,updatedAt:0});
 
      // Add status to each event
-    //  const enrichedEvents = events.map(event => {
-    //   let status = "Upcoming";
-    //   if (event.date < currentDate) status = "Completed";
-    //   else if (event.date === currentDate) status = "Ongoing";
+     const enrichedEvents = events.map(event => {
+      let status = "Upcoming";
+      if (event.date < currentDate) status = "Completed";
+      else if (event.date === currentDate) status = "Ongoing";
     
-    //   return {
-    //     ...event._doc, // Spread original event
-    //     status,
-    //   };
-    // });
+      return {
+        ...event._doc, // Spread original event
+        status,
+      };
+    });
     
     res.status(200).json({
       status: true,
       message: "Event List Get Successfully",
-      data: events,
+      data: enrichedEvents,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: "Server Error", error });
@@ -196,6 +207,34 @@ exports.deleteEvent = async (req, res) => {
 //event detail with sevak list
 exports.getEventDetail = async (req, res) => {
   try {
+    const { filterByAttendance, filterDepartment, filterKshetra,filterMandal,search } = req.query;
+    
+    const userGender = req.user.gender
+    const userRole = req.user.role
+
+    let query = { isDeleted: false };
+
+    //if not admin
+    if (userRole !== "superAdmin") {
+      query.gender = userGender;
+    }
+
+    if (search) {
+      const regex = new RegExp(search, "i");
+      query.$or = [{ fullName: regex }];
+    }
+
+    if (filterKshetra) {
+      query.kshetra = filterKshetra;
+    }
+
+    if (filterMandal) {
+      query.mandal = new ObjectId(filterMandal);
+    }
+    if (filterDepartment) {
+      query.departments = new ObjectId(filterDepartment);
+    }
+
     const now = new Date();
     const currentDate = now.toISOString().split("T")[0];
     const currentTime = now.toTimeString().split(" ")[0]; // "HH:MM:SS" format
@@ -208,8 +247,12 @@ exports.getEventDetail = async (req, res) => {
       endTime: 1,
     });
 
-    console.log("event.date",event.date)
-    console.log("currentDate",currentDate)
+    if (!event) {
+      return res
+        .status(404)
+        .json({ status: false, message: "Event not found", data: null });
+    }
+
     // Determine event status
     let eventStatus = "";
     if (event.date == currentDate) {
@@ -220,16 +263,10 @@ exports.getEventDetail = async (req, res) => {
       eventStatus = "Completed";
     }
 
-    if (!event) {
-      return res
-        .status(404)
-        .json({ status: false, message: "Event not found", data: null });
-    }
-
     const eventStartTime = convertTo24HourFormat(event.startTime)
     const sevak = await Sevak.aggregate([
       {
-        $match: { isDeleted: false },
+        $match: query,
       },
       {
         $lookup: {
@@ -241,17 +278,37 @@ exports.getEventDetail = async (req, res) => {
               $match: { eventId: event._id },
             },
             {
-              $project: { presentTime: 1 },
+              $project: { presentTime: 1,convertedPresentTime:1 },
             },
           ],
           as: "sevakAttendances",
         },
       },
       {
+        $lookup: {
+          from: "mandals",
+          localField: "mandal",
+          foreignField: "_id",
+          pipeline: [
+            {
+              $match: { isDeleted: false },
+            },
+            {
+              $project: { name: 1 },
+            },
+          ],
+          as: "mandalsData",
+        },
+      },
+      {
         $project: {
           _id: 1,
           fullName: 1,
-          userName: 1,
+          mobile:1,
+          whatsappNumber:1,
+          mandal: { $arrayElemAt: ["$mandalsData.name", 0] },
+          kshetra:1,
+          departments:1,
           profilePic:"https://images.pexels.com/photos/736230/pexels-photo-736230.jpeg?auto=compress&cs=tinysrgb&w=1260&h=750&dpr=1",
           presentTime: {
             $ifNull: [
@@ -266,7 +323,7 @@ exports.getEventDetail = async (req, res) => {
                 $cond: {
                   if: {
                     $gt: [
-                      { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
+                      { $arrayElemAt: ["$sevakAttendances.convertedPresentTime", 0] },
                       eventStartTime,
                     ],
                   },
@@ -284,6 +341,13 @@ exports.getEventDetail = async (req, res) => {
               else: false,
             },
           },
+          presentData: {
+            $cond: {
+              if: { $gt: [{ $size: "$sevakAttendances" }, 0] },
+              then: "Present",
+              else: "Absent",
+            },
+          },
           attendance: {
             $cond: {
               if: { $gt: [{ $size: "$sevakAttendances" }, 0] },
@@ -291,7 +355,7 @@ exports.getEventDetail = async (req, res) => {
                 $cond: {
                   if: {
                     $gt: [
-                      { $arrayElemAt: ["$sevakAttendances.presentTime", 0] },
+                      { $arrayElemAt: ["$sevakAttendances.convertedPresentTime", 0] },
                       eventStartTime,
                     ],
                   },
@@ -304,6 +368,15 @@ exports.getEventDetail = async (req, res) => {
           },
         },
       },
+      ...(filterByAttendance
+        ? [
+            {
+              $match: {
+                presentData: filterByAttendance,
+              },
+            },
+          ]
+        : []),
     ]);
 
     // Count summary
@@ -339,6 +412,9 @@ exports.getEventDetail = async (req, res) => {
         ],
         summary: {
           totalSevaks,
+          totalOnTime:totalOnTime,
+          totalLate:totalLate,
+          totalAbsent:totalAbsent,
           percentageOnTime: percentage(totalOnTime),
           percentageLate: percentage(totalLate),
           percentageAbsent: percentage(totalAbsent),
