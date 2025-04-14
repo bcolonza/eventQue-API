@@ -10,6 +10,7 @@ router.post('/register', authorizeRoles("superAdmin"),sevakController.createSeva
 router.post('/updatePassword',authorizeRoles("superAdmin", "sevak","leader"), sevakController.updatePassword);
 router.get('/dashboard',authorizeRoles("superAdmin"), sevakController.dashboard);
 router.get('/profile', authorizeRoles("superAdmin","sevak","leader"),sevakController.profile);
+router.post('/sevak/uploadCSV', authorizeRoles("superAdmin"),upload.single('csvfile'),sevakController.uploadCSV);
 // CRUD Routes
 router.get('/sevak/', authorizeRoles("superAdmin", "leader"),sevakController.getSevaks);
 // router.get('/sevak/:id', authorizeRoles("superAdmin","sevak","leader"),sevakController.getSevakById);
@@ -17,6 +18,5 @@ router.put('/sevak/:id', authorizeRoles("superAdmin"),sevakController.updateSeva
 router.delete('/sevak/:id', authorizeRoles("superAdmin"),sevakController.deleteSevak);
 router.post('/sevak/markAttendance', authorizeRoles("superAdmin"),sevakController.markAttendance);
 
-router.post('/sevak/uploadCSV', upload.single('csvfile'),sevakController.uploadCSV);
 
 module.exports = router;

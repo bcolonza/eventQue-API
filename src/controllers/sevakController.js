@@ -9,7 +9,6 @@ const csv = require("csv-parser");
 const generateToken = require('../utils/generateToken');
 const { totalmem } = require("os");
 const { convertTo24HourFormat,convertTo12HourFormat } = require("../utils/dateFormet.js");
-const bcrypt = require('bcryptjs');
 
 const validateDepartments = async (departmentIds) => {
   const count = await Department.countDocuments({
@@ -226,8 +225,7 @@ exports.getSevaks = async (req, res) => {
       query.mandal = mandal;
     }
     const sevaks = await Sevak.find(query)
-      .sort({ fullName: 1 }).select({__v:0,createdAt:0, updatedAt:0,isAdmin:0})
-      // .populate("mandal", { name: 1 })
+      .sort({ userName: 1 }).select({__v:0,createdAt:0, updatedAt:0,isAdmin:0})
       .populate("departments", { name: 1 });
     res
       .status(200)
@@ -390,51 +388,34 @@ exports.markAttendance = async (req, res) => {
 exports.uploadCSV = async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-  const rawRows = [];
+  const results = [];
 
-  // Step 1: Read all CSV rows first
   fs.createReadStream(req.file.path)
     .pipe(csv())
     .on("data", (data) => {
-      rawRows.push(data);
+      const { Name, Mobile, Mandal, Kshetra, "Full Name": FullName } = data;
+
+      // Only push required fields
+      results.push({
+        fullName: FullName,
+        userName: Name,
+        mobile: Mobile,
+        mandal: Mandal,
+        kshetra: Kshetra,
+      });
     })
     .on("end", async () => {
       try {
-        const results = [];
-
-        for (const row of rawRows) {
-          const { Name, Mobile, Mandal, Kshetra, gender, role, password } = row;
-
-          // const existMandal = await Mandal.findOne({ name: Mandal, isDeleted: false });
-          // if (!existMandal) continue; // Skip if mandal doesn't exist
-
-          const hashedPassword = await bcrypt.hash(password || "default@123", 10);
-
-          results.push({
-            fullName: Name,
-            mobile: Mobile,
-            whatsappNumber: Mobile,
-            email: "",
-            mandal: Mandal,
-            kshetra: Kshetra,
-            gender: gender,
-            role: role,
-            password: hashedPassword,
-          });
-        }
-
-        await Sevak.insertMany(results);
-        fs.unlinkSync(req.file.path); // Clean up uploaded file
-
-        res.status(200).json({ message: "CSV uploaded and data stored successfully." });
+        const result = await Sevak.insertMany(results);
+        fs.unlinkSync(req.file.path); // Clean up file
+        res
+          .status(200)
+          .json({ message: "CSV uploaded and data stored successfully." });
       } catch (error) {
-        console.error("Upload Error:", error);
         res.status(500).json({ error: "Failed to insert data into MongoDB" });
       }
     });
 };
-
-
 
 
   
